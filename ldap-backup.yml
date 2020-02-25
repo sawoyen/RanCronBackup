@@ -1,0 +1,36 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: test-backup-ldap
+  namespace: default
+spec:
+  schedule: "17 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup-ldap
+              image: nexus.okp.msdnr.ru:8082/osixia/openldap:1.2.4
+              command: [ "/bin/sh", "-c", "/bu-map/backup-ldap.sh cn=admin,dc=astelit t4BbrHF1njcD dc=astelit 192.168.38.27:30394" ]
+              env:
+                - name: LDAP_DOMAIN
+                  value: "msdnr.ru"
+              volumeMounts:
+                - name: bu-map
+                  mountPath: /bu-map
+                - name: bu-volume
+                  mountPath: /bu-volume
+                  subPath: testfolder/backup-script
+          volumes:
+            - name: bu-map
+              configMap:
+                defaultMode: 511
+                name: backup-scripts
+            - name: bu-volume
+              persistentVolumeClaim:
+                claimName: backup-script
+          imagePullSecrets:
+            - name: nexus

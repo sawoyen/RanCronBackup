@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  labels:
+    app: backup
+data:
+  backup-pg.sh: |
+    DATA=`date +'%Y-%m-%d_%H-%M'`
+    DATEFMT='%Y-%m-%d_%H-%M-%S'
+    GETDB="select datname from pg_database where datistemplate = 'f';"
+    SERVICELOG=/bu-volume/$1/service.log
+    BACKUPPATH=/bu-volume/$1/`date +'%y-%m-%d_%H-%M'`
+    mkdir -p /bu-volume/$1/`date +'%y-%m-%d_%H-%M'`
+    touch $SERVICELOG
+    COUNT=0
+    TOTALCOUNT=0
+    echo "script started ${DATA}" >> ${SERVICELOG}
+    RESULT=$(psql -h pg -d corella-redmine -t -c "${GETDB}" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "${RESULT}"
+        exit
+    fi
+    for dbname in ${RESULT}
+    do
+      TOTALCOUNT=$(($TOTALCOUNT +1))
+      echo "`date +${DATEFMT}` backup started ${dbname}" >> ${SERVICELOG}
+      pg_dump -h $1 -f $BACKUPPATH/$DATA-${dbname}.sql ${dbname} | gzip -c >$BACKUPPATH/$DATA-${dbname}.sql.gz #| pigz > $BACKUPPATH/$DATA-${dbname}.sql.gz 2>&1
+      if [ $? -ne 0 ]; then
+        echo "cannot create backup ${dbname}" >> ${SERVICELOG}
+        continue
+      else
+        echo "`date +${DATEFMT}` backup finished ${dbname}" >> ${SERVICELOG}
+        rm -f $BACKUPPATH/$DATA-${dbname}.sql
+        COUNT=$(($COUNT +1))
+      fi
+    done
+    echo "Скрипт сделал свое дело в `date +${DATEFMT}`" >> ${SERVICELOG}
+    echo "${COUNT} in ${TOTALCOUNT} done" >> ${SERVICELOG}
+  backup-ldap.sh: |
+    set -e
+    [ `id -u` -eq 0 ] || (echo required sudo && exit 1)
+    bdir=/bu-volume/ldap/ldap-`date +'%y-%m-%d_%H-%M'`
+    mkdir -p $bdir
+    chmod 777 $bdir
+    echo creating ldap dump...
+    ldapsearch -D "$1" -w $2 -b "$3" -H ldap://$4 -LLL > $bdir/dump.ldif
+    [ $? -eq 0 ] && echo OK || echo FAIL
+    echo tar
+    tar czf $bdir.tar.gz -C $bdir .
+    [ $? -eq 0 ] && echo OK || echo FAIL
+    echo remove backup folder
+    rm -rf $bdir
+    [ $? -eq 0 ] && echo OK || echo FAIL

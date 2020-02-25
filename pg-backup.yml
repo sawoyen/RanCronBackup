@@ -1,0 +1,46 @@
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: test-bu
+  labels:
+    app: backup
+spec:
+  schedule: "17 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup-new
+              image: "nexus.okp.msdnr.ru:8082/postgres:10.5-alpine"
+              command: [ "/bin/sh", "-c", "/bu-map/backup-pg.sh pg" ]
+              volumeMounts:
+              - name: bu-map
+                mountPath: /bu-map
+              - name: bu-volume
+                mountPath: /bu-volume
+                subPath: testfolder/backup
+              env:
+                - name: PGDATA
+                  value: /var/lib/postgresql/data/pgdata
+                - name: PGPASSWORD
+                  value: dev
+                - name: PGUSER
+                  value: dev
+                - name: POSTGRES_INITDB_WALDIR
+                  value: /var/lib/postgresql/data/pgwal
+                - name: POSTGRES_USER
+                  value: dev
+              imagePullSecrets:
+              - name: nexus
+          volumes:
+            - name: bu-map
+              configMap:
+                defaultMode: 511
+                name: backup-scripts
+            - name: bu-volume
+              persistentVolumeClaim:
+                claimName: backup-volume
